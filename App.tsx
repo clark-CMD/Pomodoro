@@ -399,7 +399,7 @@ const App: React.FC = () => {
       />
 
       <footer className="absolute bottom-4 text-center w-full text-xs text-slate-100 text-opacity-50">
-        
+        番茄工作法计时器 - 专注每一刻
       </footer>
     </div>
   );
