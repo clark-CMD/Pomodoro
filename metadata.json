@@ -1,0 +1,5 @@
+{
+  "name": "番茄工作法计时器 (Pomodoro Timer)",
+  "description": "一个美观且功能丰富的番茄工作法计时器，帮助用户提高专注度和效率。支持自定义工作、短时休息和长时间休息的计时阶段，并自动追踪已完成的番茄钟数量。",
+  "requestFramePermissions": []
+}
