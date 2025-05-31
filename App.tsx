@@ -356,13 +356,13 @@ const App: React.FC = () => {
     >
       <button
         onClick={() => setIsSettingsModalOpen(true)}
-        className="absolute top-4 right-4 sm:top-6 sm:right-6 p-3 bg-slate-900 bg-opacity-40 rounded-full backdrop-blur-sm text-white hover:bg-opacity-60 focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50 transition-all"
+        className="absolute top-6 right-4 sm:top-8 sm:right-6 p-3 bg-slate-900 bg-opacity-40 rounded-full backdrop-blur-sm text-white hover:bg-opacity-60 focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50 transition-all"
         aria-label="打开设置"
       >
         <SettingsIcon className="w-6 h-6 sm:w-7 sm:h-7" />
       </button>
 
-      <main className="flex flex-col items-center justify-center bg-slate-800 bg-opacity-60 backdrop-blur-lg rounded-3xl shadow-2xl p-6 sm:p-10 w-full max-w-lg sm:max-w-xl">
+      <main className="flex flex-col items-center justify-center bg-slate-800 bg-opacity-60 backdrop-blur-lg rounded-3xl shadow-2xl p-6 sm:p-10 w-full max-w-lg sm:max-w-xl mb-10">
         <div className="text-center mb-6 sm:mb-8">
           <h1 className="text-4xl sm:text-5xl font-bold text-white">
             {currentStageConfig.name}
@@ -406,4 +406,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-    
