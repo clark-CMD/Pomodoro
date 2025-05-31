@@ -1,11 +1,11 @@
-
 <!DOCTYPE html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" /> <!-- You can replace this with a proper favicon -->
+    <!-- 你可以放一个真实的 favicon.ico 文件到 public 文件夹下, Vite 会自动处理 -->
+    <!-- <link rel="icon" type="image/svg+xml" href="/vite.svg" /> -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>番茄工作法计时器</title>
+    <title>番茄工作法计时器 (Pomodoro Timer)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -24,9 +24,9 @@
   <script type="importmap">
 {
   "imports": {
-    "react/": "https://esm.sh/react@^19.1.0/",
     "react": "https://esm.sh/react@^19.1.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.1.0/"
+    "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
+    "react/": "https://esm.sh/react@^19.1.0/"
   }
 }
 </script>
@@ -37,4 +37,3 @@
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>
-    
