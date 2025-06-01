@@ -1,0 +1,34 @@
+{
+  "short_name": "番茄钟",
+  "name": "番茄工作法计时器 (Pomodoro Timer)",
+  "description": "一个美观且功能丰富的番茄工作法计时器，帮助用户提高专注度和效率。支持自定义工作、短时休息和长时间休息的计时阶段，并自动追踪已完成的番茄钟数量。",
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    },
+    {
+      "src": "/icons/icon-maskable-192x192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-maskable-512x512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#1E293B",
+  "theme_color": "#0EA5E9",
+  "scope": "/"
+}
