@@ -1,21 +1,28 @@
-const CACHE_NAME = 'pomodoro-timer-cache-v2'; // Incremented cache version
+
+const CACHE_NAME = 'pomodoro-timer-cache-v3'; // Incremented cache version
 const urlsToCache = [
   '/',
   '/index.html',
-  '/index.tsx',
+  '/index.tsx', // Main TSX file
   '/manifest.json',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png',
   '/icons/icon-maskable-192x192.png',
   '/icons/icon-maskable-512x512.png',
   '/icons/apple-touch-icon.png',
+  // Tailwind CSS from CDN
   'https://cdn.tailwindcss.com',
-  // URLs from importmap
+  // React and ReactDOM from esm.sh (resolved URLs might be more specific in practice)
   'https://esm.sh/react@^19.1.0',
-  'https://esm.sh/react-dom@^19.1.0/client', // Main import from react-dom
-  // Potentially other dynamic imports from esm.sh if they resolve to unique URLs.
-  // e.g. https://esm.sh/react@^19.1.0/jsx-runtime for JSX
-  'https://esm.sh/react@^19.1.0/jsx-runtime', 
+  'https://esm.sh/react-dom@^19.1.0/client',
+  'https://esm.sh/react@^19.1.0/jsx-runtime', // For JSX
+  // Note: The actual URLs resolved by esm.sh might include specific versions or sub-paths.
+  // It's good to check network tab for exact URLs to cache if being very precise.
+  // For example, specific files like:
+  // 'https://esm.sh/v135/react@19.1.0/es2022/react.mjs',
+  // 'https://esm.sh/v135/react-dom@19.1.0/es2022/client.mjs',
+  // 'https://esm.sh/v135/react@19.1.0/es2022/jsx-runtime.mjs',
+  // However, caching the ^ version URLs should work with stale-while-revalidate.
 ];
 
 self.addEventListener('install', (event) => {
@@ -23,21 +30,20 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME)
       .then((cache) => {
         console.log('Opened cache:', CACHE_NAME);
-        // Add all URLs to cache, but don't fail install if some CDN resources fail
-        // Individual fetch requests allow for this flexibility
         const promises = urlsToCache.map((url) => {
-          return fetch(new Request(url, { mode: 'cors' })) // Ensure CORS for CDN assets
+          // For CDN resources, use 'cors' mode. For local, default 'no-cors' is fine.
+          const request = new Request(url, { mode: (url.startsWith('https://esm.sh') || url.startsWith('https://cdn.tailwindcss.com')) ? 'cors' : 'no-cors' });
+          return fetch(request)
             .then(response => {
               if (!response.ok) {
-                // Don't throw error to break install, just log it
-                console.warn('Failed to fetch and cache:', url, response.status);
-                return Promise.resolve(); // Resolve so Promise.all doesn't reject
+                console.warn('Failed to fetch and cache during install:', url, response.status);
+                return Promise.resolve(); 
               }
-              return cache.put(url, response);
+              return cache.put(request, response); // Use request object as key
             })
             .catch(err => {
-              console.warn('Failed to fetch and cache during install:', url, err);
-              return Promise.resolve(); // Resolve so Promise.all doesn't reject
+              console.warn('Failed to fetch and cache (network error) during install:', url, err);
+              return Promise.resolve();
             });
         });
         return Promise.all(promises);
@@ -63,7 +69,6 @@ self.addEventListener('activate', (event) => {
         })
       );
     }).then(() => {
-      // Ensure the new service worker takes control immediately
       return self.clients.claim();
     })
   );
@@ -72,8 +77,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const requestUrl = new URL(event.request.url);
 
-  // For esm.sh or cdn.tailwindcss.com, use a stale-while-revalidate strategy
-  // to ensure they can update but still serve quickly from cache.
+  // Stale-while-revalidate for CDN assets (Tailwind, esm.sh)
   if (requestUrl.hostname === 'esm.sh' || requestUrl.hostname === 'cdn.tailwindcss.com') {
     event.respondWith(
       caches.open(CACHE_NAME).then((cache) => {
@@ -85,8 +89,7 @@ self.addEventListener('fetch', (event) => {
             return networkResponse;
           }).catch(err => {
             console.warn('Network fetch failed for CDN resource:', event.request.url, err);
-            // If fetch fails (offline) and not in cache, this will result in error
-            // but if in cache, cachedResponse is already served.
+            // If offline and not in cache, this will error. If in cache, cachedResponse is already served.
           });
           return cachedResponse || fetchPromise;
         });
@@ -95,23 +98,19 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // For local assets, use cache-first strategy
+  // Cache-first for local assets (index.html, /, /index.tsx, icons, manifest)
   event.respondWith(
     caches.match(event.request)
       .then((response) => {
         if (response) {
-          return response; // Serve from cache
+          return response; 
         }
-        // Not in cache, fetch from network, cache it, and then return
         return fetch(event.request).then(
           (networkResponse) => {
             if (!networkResponse || !networkResponse.ok || networkResponse.status === 404) {
-              // If the resource is critical and not found, this could be an issue.
-              // For non-critical or dynamically generated content, this might be fine.
-              console.warn('Network fetch failed or resource not found:', event.request.url, networkResponse ? networkResponse.status : 'No response');
-              return networkResponse; // Return the error response or undefined
+              console.warn('Network fetch failed or resource not found (local):', event.request.url, networkResponse ? networkResponse.status : 'No response');
+              return networkResponse; 
             }
-            // Clone the response because it's a stream and can only be consumed once.
             const responseToCache = networkResponse.clone();
             caches.open(CACHE_NAME)
               .then((cache) => {
@@ -120,10 +119,11 @@ self.addEventListener('fetch', (event) => {
             return networkResponse;
           }
         ).catch(error => {
-          console.error('Fetching failed:', event.request.url, error);
-          // You could return a custom offline page here if desired for HTML pages
-          // For assets, this will likely result in a broken UI element if not cached.
-          // e.g. if (event.request.mode === 'navigate') return caches.match('/offline.html');
+          console.error('Fetching failed (local):', event.request.url, error);
+          // For navigation requests, you might want to return an offline fallback page.
+          // if (event.request.mode === 'navigate') {
+          //   return caches.match('/offline.html'); // Ensure offline.html is cached
+          // }
         });
       })
   );

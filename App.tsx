@@ -1,33 +1,29 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Stage, Settings, StageConfig } from './types';
-import { DEFAULT_SETTINGS, STAGE_CONFIGS, LOCAL_STORAGE_SETTINGS_KEY, LOCAL_STORAGE_TIMER_STATE_KEY } from './constants';
+import { Stage, Settings, StageConfig, DailyStat, PersistedTimerState } from './types';
+import { DEFAULT_SETTINGS, STAGE_CONFIGS, LOCAL_STORAGE_SETTINGS_KEY, LOCAL_STORAGE_TIMER_STATE_KEY, LOCAL_STORAGE_DAILY_STATS_KEY } from './constants';
 import TimerDisplay from './components/TimerDisplay';
 import Controls from './components/Controls';
 import SettingsModal from './components/SettingsModal';
+import StatsModal from './components/StatsModal'; // Import new modal
 import SettingsIcon from './components/icons/SettingsIcon';
+import StatsIcon from './components/icons/StatsIcon'; // Import new icon
 import { loadSettings as loadSettingsFromService, saveSettings as saveSettingsToService } from './services/settingsService';
-
-interface PersistedTimerState {
-  currentStage: Stage;
-  timeLeft: number;
-  pomodoroCount: number;
-  completedPomodorosInCycle: number;
-}
 
 const App: React.FC = () => {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [currentStage, setCurrentStage] = useState<Stage>(Stage.WORK);
   const [timeLeft, setTimeLeft] = useState<number>(settings.workMinutes * 60);
   const [isRunning, setIsRunning] = useState<boolean>(false);
-  const [pomodoroCount, setPomodoroCount] = useState<number>(0);
+  const [pomodoroCount, setPomodoroCount] = useState<number>(0); // Today's pomodoros
   const [completedPomodorosInCycle, setCompletedPomodorosInCycle] = useState<number>(0);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
+  const [isStatsModalOpen, setIsStatsModalOpen] = useState<boolean>(false); // State for new modal
   const [isLoadingSettings, setIsLoadingSettings] = useState<boolean>(true);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [finishSoundBuffer, setFinishSoundBuffer] = useState<AudioBuffer | null>(null);
+  const [dailyStats, setDailyStats] = useState<Record<string, DailyStat>>({});
 
-  // Refs for visibility change handling
   const lastHiddenTimeRef = useRef<number | null>(null);
   const timeLeftAtHideRef = useRef<number | null>(null);
   const wasRunningWhenHiddenRef = useRef<boolean>(false);
@@ -47,10 +43,22 @@ const App: React.FC = () => {
     }
   }, [audioContext, finishSoundBuffer]);
 
-  // Effect for loading settings and persisted timer state
   useEffect(() => {
     const loadedSettings = loadSettingsFromService();
     setSettings(loadedSettings);
+
+    let loadedDailyStats: Record<string, DailyStat> = {};
+    try {
+      const dailyStatsJSON = localStorage.getItem(LOCAL_STORAGE_DAILY_STATS_KEY);
+      if (dailyStatsJSON) {
+        loadedDailyStats = JSON.parse(dailyStatsJSON);
+        setDailyStats(loadedDailyStats);
+      }
+    } catch (error) {
+      console.error("Failed to load daily stats:", error);
+    }
+    
+    const todayStr = new Date().toISOString().split('T')[0];
 
     try {
       const persistedTimerStateJSON = localStorage.getItem(LOCAL_STORAGE_TIMER_STATE_KEY);
@@ -59,7 +67,6 @@ const App: React.FC = () => {
         
         if (persistedState.currentStage && Object.values(Stage).includes(persistedState.currentStage)) {
           setCurrentStage(persistedState.currentStage);
-          
           let stageDuration;
           switch (persistedState.currentStage) {
             case Stage.WORK: stageDuration = loadedSettings.workMinutes * 60; break;
@@ -67,7 +74,6 @@ const App: React.FC = () => {
             case Stage.LONG_BREAK: stageDuration = loadedSettings.longBreakMinutes * 60; break;
             default: stageDuration = loadedSettings.workMinutes * 60;
           }
-          
           if (typeof persistedState.timeLeft === 'number' && persistedState.timeLeft >= 0) {
             setTimeLeft(Math.min(persistedState.timeLeft, stageDuration));
           } else {
@@ -78,23 +84,30 @@ const App: React.FC = () => {
           setTimeLeft(loadedSettings.workMinutes * 60);
         }
 
-        if (typeof persistedState.pomodoroCount === 'number' && persistedState.pomodoroCount >= 0) {
+        if (persistedState.persistedDate === todayStr && typeof persistedState.pomodoroCount === 'number') {
           setPomodoroCount(persistedState.pomodoroCount);
+        } else {
+          setPomodoroCount(loadedDailyStats[todayStr]?.count || 0);
         }
+        
         if (typeof persistedState.completedPomodorosInCycle === 'number' && persistedState.completedPomodorosInCycle >= 0) {
            const maxInCycle = loadedSettings.pomodorosPerLongBreak > 0 ? loadedSettings.pomodorosPerLongBreak : 1;
            setCompletedPomodorosInCycle(Math.min(persistedState.completedPomodorosInCycle, maxInCycle -1 < 0 ? 0 : maxInCycle -1 ));
+        } else {
+            setCompletedPomodorosInCycle(0);
         }
 
-      } else {
+      } else { // No persisted timer state
         setCurrentStage(Stage.WORK);
         setTimeLeft(loadedSettings.workMinutes * 60);
+        setPomodoroCount(loadedDailyStats[todayStr]?.count || 0);
+        setCompletedPomodorosInCycle(0);
       }
     } catch (error) {
       console.error("Failed to load persisted timer state:", error);
       setCurrentStage(Stage.WORK);
       setTimeLeft(loadedSettings.workMinutes * 60);
-      setPomodoroCount(0);
+      setPomodoroCount(loadedDailyStats[todayStr]?.count || 0);
       setCompletedPomodorosInCycle(0);
     }
     
@@ -118,16 +131,15 @@ const App: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-
-  // Effect for saving timer state to localStorage
   useEffect(() => {
     if (isLoadingSettings) return; 
-
+    const todayStr = new Date().toISOString().split('T')[0];
     const timerStateToPersist: PersistedTimerState = {
       currentStage,
       timeLeft,
-      pomodoroCount,
+      pomodoroCount, // Today's pomodoro count
       completedPomodorosInCycle,
+      persistedDate: todayStr,
     };
     try {
       localStorage.setItem(LOCAL_STORAGE_TIMER_STATE_KEY, JSON.stringify(timerStateToPersist));
@@ -135,6 +147,19 @@ const App: React.FC = () => {
       console.error("Failed to save timer state to localStorage:", error);
     }
   }, [currentStage, timeLeft, pomodoroCount, completedPomodorosInCycle, isLoadingSettings]);
+
+  useEffect(() => {
+    if (isLoadingSettings) return;
+    // Avoid writing to localStorage if dailyStats is empty and wasn't loaded from there
+    if (Object.keys(dailyStats).length === 0 && !localStorage.getItem(LOCAL_STORAGE_DAILY_STATS_KEY)) {
+        return;
+    }
+    try {
+        localStorage.setItem(LOCAL_STORAGE_DAILY_STATS_KEY, JSON.stringify(dailyStats));
+    } catch (error) {
+        console.error("Failed to save daily stats to localStorage:", error);
+    }
+  }, [dailyStats, isLoadingSettings]);
 
 
   const switchStage = useCallback((nextStage: Stage) => {
@@ -156,8 +181,6 @@ const App: React.FC = () => {
     }
     setTimeLeft(newTimeLeft);
     playSound();
-    // Auto-start next stage is often desired, but let's ensure it's user-initiated or after focus restoration
-    // For now, switchStage implies a transition that should then be started by user or visibility handler
   }, [settings, playSound]);
 
 
@@ -169,9 +192,21 @@ const App: React.FC = () => {
       }, 1000);
     } else if (isRunning && timeLeft === 0) {
       if (currentStage === Stage.WORK) {
-        const newPomodoroCount = pomodoroCount + 1;
+        const todayStr = new Date().toISOString().split('T')[0];
+        const currentTodayStats = dailyStats[todayStr] || { count: 0, totalWorkMinutes: 0 };
+        const newTodayCount = currentTodayStats.count + 1;
+        const newTodayWorkMinutes = currentTodayStats.totalWorkMinutes + settings.workMinutes;
+
+        setPomodoroCount(newTodayCount); 
+        setDailyStats(prevStats => ({
+            ...prevStats,
+            [todayStr]: {
+                count: newTodayCount,
+                totalWorkMinutes: newTodayWorkMinutes,
+            },
+        }));
+        
         const newCompletedInCycle = completedPomodorosInCycle + 1;
-        setPomodoroCount(newPomodoroCount);
         setCompletedPomodorosInCycle(newCompletedInCycle);
 
         if (settings.pomodorosPerLongBreak > 0 && newCompletedInCycle >= settings.pomodorosPerLongBreak) {
@@ -185,7 +220,7 @@ const App: React.FC = () => {
       }
     }
     return () => clearInterval(timer);
-  }, [isRunning, timeLeft, currentStage, settings, pomodoroCount, completedPomodorosInCycle, switchStage]);
+  }, [isRunning, timeLeft, currentStage, settings, pomodoroCount, completedPomodorosInCycle, switchStage, dailyStats]);
 
 
   useEffect(() => {
@@ -229,8 +264,6 @@ const App: React.FC = () => {
     if (audioContext && audioContext.state === 'suspended') {
         audioContext.resume();
     }
-    // Stop current timer, play sound, then switch.
-    // switchStage handles the sound and setting new time.
     setIsRunning(false); 
     if (currentStage === Stage.WORK) {
        switchStage(Stage.SHORT_BREAK);
@@ -243,29 +276,41 @@ const App: React.FC = () => {
     saveSettingsToService(newSettings);
     setSettings(newSettings);
     setIsRunning(false); 
-    setCurrentStage(Stage.WORK); 
-    setTimeLeft(newSettings.workMinutes * 60);
+    
+    // Re-evaluate current stage time based on new settings, but don't change stage
+    // If current stage is WORK, update timeLeft to new workMinutes, etc.
+    let newTimeForCurrentStage;
+    switch(currentStage) {
+        case Stage.WORK: newTimeForCurrentStage = newSettings.workMinutes * 60; break;
+        case Stage.SHORT_BREAK: newTimeForCurrentStage = newSettings.shortBreakMinutes * 60; break;
+        case Stage.LONG_BREAK: newTimeForCurrentStage = newSettings.longBreakMinutes * 60; break;
+        default: newTimeForCurrentStage = newSettings.workMinutes * 60;
+    }
+    setTimeLeft(newTimeForCurrentStage);
+    // If settings change pomodorosPerLongBreak, completedPomodorosInCycle might need reset
+    // or adjustment. Simplest is to reset it.
     setCompletedPomodorosInCycle(0); 
-  }, []);
+  }, [currentStage]); // Added currentStage dependency
 
   const getStageDuration = useCallback((stage: Stage, currentSettings: Settings): number => {
     switch (stage) {
         case Stage.WORK: return currentSettings.workMinutes * 60;
         case Stage.SHORT_BREAK: return currentSettings.shortBreakMinutes * 60;
         case Stage.LONG_BREAK: return currentSettings.longBreakMinutes * 60;
-        default: return currentSettings.workMinutes * 60; // Fallback, should not happen
+        default: return currentSettings.workMinutes * 60;
     }
   }, []);
 
   const handleVisibilityChange = useCallback(() => {
     if (isLoadingSettings) return;
+    const todayStr = new Date().toISOString().split('T')[0];
 
     if (document.hidden) {
         if (isRunning) {
             lastHiddenTimeRef.current = Date.now();
             timeLeftAtHideRef.current = timeLeft;
             wasRunningWhenHiddenRef.current = true;
-            setIsRunning(false); // Pause the interval
+            setIsRunning(false);
         }
     } else {
         if (wasRunningWhenHiddenRef.current && lastHiddenTimeRef.current !== null && timeLeftAtHideRef.current !== null) {
@@ -274,20 +319,29 @@ const App: React.FC = () => {
 
             let newTimeLeftState = timeLeftAtHideRef.current - timeElapsedSec;
             let newCurrentStageState = currentStage;
-            let newPomodoroCountState = pomodoroCount;
+            // let newPomodoroCountState = pomodoroCount; // Today's count will be updated based on dailyStats
             let newCompletedPomodorosInCycleState = completedPomodorosInCycle;
             let playSoundOnFocus = false;
             
-            const currentSettingsSnapshot = settings; // Use a snapshot of settings
+            const currentSettingsSnapshot = settings;
+            let tempDailyStats = {...dailyStats}; // Operate on a copy for calculations within this block
+            let tempPomodoroCount = pomodoroCount;
 
-            // Loop to process multiple stage completions if necessary
+
             while (newTimeLeftState <= 0) {
                 playSoundOnFocus = true; 
-                const durationOfFinishedStage = getStageDuration(newCurrentStageState, currentSettingsSnapshot);
+                // const durationOfFinishedStage = getStageDuration(newCurrentStageState, currentSettingsSnapshot);
                 const timeOverranBy = Math.abs(newTimeLeftState);
 
                 if (newCurrentStageState === Stage.WORK) {
-                    newPomodoroCountState++;
+                    const currentTodayStats = tempDailyStats[todayStr] || { count: 0, totalWorkMinutes: 0 };
+                    tempPomodoroCount = currentTodayStats.count + 1;
+                    const newTodayWorkMinutes = currentTodayStats.totalWorkMinutes + currentSettingsSnapshot.workMinutes;
+                    tempDailyStats = {
+                        ...tempDailyStats,
+                        [todayStr]: { count: tempPomodoroCount, totalWorkMinutes: newTodayWorkMinutes }
+                    };
+                    
                     newCompletedPomodorosInCycleState++;
                     if (currentSettingsSnapshot.pomodorosPerLongBreak > 0 && newCompletedPomodorosInCycleState >= currentSettingsSnapshot.pomodorosPerLongBreak) {
                         newCurrentStageState = Stage.LONG_BREAK;
@@ -295,7 +349,7 @@ const App: React.FC = () => {
                     } else {
                         newCurrentStageState = Stage.SHORT_BREAK;
                     }
-                } else { // SHORT_BREAK or LONG_BREAK finished
+                } else { 
                     newCurrentStageState = Stage.WORK;
                 }
                 
@@ -303,13 +357,13 @@ const App: React.FC = () => {
                 newTimeLeftState = durationOfNextStage - timeOverranBy;
             }
             
+            setDailyStats(tempDailyStats); // Commit updated daily stats
+            setPomodoroCount(tempDailyStats[todayStr]?.count || 0); // Update UI pomodoro count from potentially modified daily stats
             setCurrentStage(newCurrentStageState);
-            setPomodoroCount(newPomodoroCountState);
             setCompletedPomodorosInCycle(newCompletedPomodorosInCycleState);
-            setTimeLeft(newTimeLeftState > 0 ? newTimeLeftState : 0); // Ensure timeLeft isn't negative
+            setTimeLeft(newTimeLeftState > 0 ? newTimeLeftState : 0); 
 
             if (playSoundOnFocus && audioContext && finishSoundBuffer) {
-              // Explicitly call playSound to ensure audio context is handled
               if (audioContext.state === 'suspended') {
                 audioContext.resume().then(() => playSound());
               } else {
@@ -317,7 +371,7 @@ const App: React.FC = () => {
               }
             }
             
-            setIsRunning(true); // Resume timer
+            setIsRunning(true); 
             
             lastHiddenTimeRef.current = null;
             timeLeftAtHideRef.current = null;
@@ -325,9 +379,9 @@ const App: React.FC = () => {
         }
     }
   }, [
-    isLoadingSettings, isRunning, timeLeft, currentStage, pomodoroCount, completedPomodorosInCycle, settings,
-    setIsRunning, setCurrentStage, setPomodoroCount, setCompletedPomodorosInCycle, setTimeLeft,
-    playSound, getStageDuration, audioContext, finishSoundBuffer // Added audioContext, finishSoundBuffer for playSound call
+    isLoadingSettings, isRunning, timeLeft, currentStage, pomodoroCount, completedPomodorosInCycle, settings, dailyStats,
+    setIsRunning, setCurrentStage, setPomodoroCount, setCompletedPomodorosInCycle, setTimeLeft, setDailyStats,
+    playSound, getStageDuration, audioContext, finishSoundBuffer
   ]);
 
   useEffect(() => {
@@ -354,13 +408,23 @@ const App: React.FC = () => {
     <div 
       className={`min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 bg-gradient-to-br ${currentStageConfig.gradient} text-slate-100 transition-all duration-700 ease-in-out`}
     >
-      <button
-        onClick={() => setIsSettingsModalOpen(true)}
-        className="absolute top-6 right-4 sm:top-8 sm:right-6 p-3 bg-slate-900 bg-opacity-40 rounded-full backdrop-blur-sm text-white hover:bg-opacity-60 focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50 transition-all"
-        aria-label="打开设置"
-      >
-        <SettingsIcon className="w-6 h-6 sm:w-7 sm:h-7" />
-      </button>
+      <div className="absolute top-8 right-4 sm:top-10 sm:right-6 flex space-x-2 sm:space-x-3 z-30">
+        <button
+            onClick={() => setIsStatsModalOpen(true)}
+            className="p-2 sm:p-3 bg-white bg-opacity-10 hover:bg-opacity-20 active:bg-opacity-30 backdrop-blur-md rounded-full text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-opacity-75 transition-all duration-150 ease-in-out transform hover:scale-105 active:scale-95"
+            aria-label="查看统计"
+        >
+            <StatsIcon className="w-6 h-6 sm:w-7 sm:h-7" />
+        </button>
+        <button
+            onClick={() => setIsSettingsModalOpen(true)}
+            className="p-2 sm:p-3 bg-white bg-opacity-10 hover:bg-opacity-20 active:bg-opacity-30 backdrop-blur-md rounded-full text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-opacity-75 transition-all duration-150 ease-in-out transform hover:scale-105 active:scale-95"
+            aria-label="打开设置"
+        >
+            <SettingsIcon className="w-6 h-6 sm:w-7 sm:h-7" />
+        </button>
+      </div>
+
 
       <main className="flex flex-col items-center justify-center bg-slate-800 bg-opacity-60 backdrop-blur-lg rounded-3xl shadow-2xl p-6 sm:p-10 w-full max-w-lg sm:max-w-xl mb-10">
         <div className="text-center mb-6 sm:mb-8">
@@ -368,10 +432,10 @@ const App: React.FC = () => {
             {currentStageConfig.name}
           </h1>
           <p className="text-sm text-slate-300 mt-2">
-            已完成番茄钟: {pomodoroCount}
+            今日已完成番茄钟: {pomodoroCount}
             {currentStage === Stage.WORK && settings.pomodorosPerLongBreak > 0 && (
               <span className="block sm:inline sm:ml-2">
-                (目标 {settings.pomodorosPerLongBreak} 个中的第 {completedPomodorosInCycle + 1} 个)
+                (本轮目标 {settings.pomodorosPerLongBreak} 个中的第 {completedPomodorosInCycle + 1} 个)
               </span>
             )}
           </p>
@@ -396,6 +460,11 @@ const App: React.FC = () => {
         onClose={() => setIsSettingsModalOpen(false)}
         onSave={handleSaveSettings}
         initialSettings={settings}
+      />
+      <StatsModal
+        isOpen={isStatsModalOpen}
+        onClose={() => setIsStatsModalOpen(false)}
+        dailyStats={dailyStats}
       />
 
       <footer className="absolute bottom-4 text-center w-full text-xs text-slate-100 text-opacity-50">

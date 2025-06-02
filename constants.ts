@@ -26,4 +26,5 @@ export const STAGE_CONFIGS: Record<Stage, StageConfig> = {
 };
 
 export const LOCAL_STORAGE_SETTINGS_KEY = 'pomodoroSettings';
-export const LOCAL_STORAGE_TIMER_STATE_KEY = 'pomodoroTimerState'; // New key for timer state
+export const LOCAL_STORAGE_TIMER_STATE_KEY = 'pomodoroTimerState';
+export const LOCAL_STORAGE_DAILY_STATS_KEY = 'pomodoroDailyStats'; // New key for daily stats
